@@ -1,322 +1,253 @@
+use std::{error::Error, io, time::Duration};
+
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, Event as CEvent, KeyCode},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::widgets::ListState;
+use glob::glob;
+use ratatui::widgets::{ListState, Widget};
 use ratatui::{
     Terminal,
-    backend::{Backend, CrosstermBackend},
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    widgets::{Block, Borders, List, ListItem, Paragraph},
 };
-use ratatui::{
-    prelude::*,
-    style::{Color, palette::tailwind},
-    text::Line,
-    widgets::{block::Title, *},
-};
-use std::{
-    error::Error,
-    io,
-    time::{Duration, Instant},
-};
-const DEFAULT_STYLE: Style = Style::new().fg(Color::Green).bg(Color::Black);
 
-#[derive(Debug, Clone)]
-pub struct ListStateWrapper {
-    max: usize,
-    state: ListState,
+#[derive(Debug)]
+struct AudioFolder<'a> {
+    path: &'a str,
+    files: Vec<String>,
 }
 
-const GAUGE1_COLOR: Color = tailwind::RED.c800;
-
-impl ListStateWrapper {
-    pub fn new(max: usize) -> Self {
+impl AudioFolder<'_> {
+    fn new(path: &'static str) -> Self {
         Self {
-            max,
-            state: ListState::default().with_selected(Some(0)),
+            path: path,
+            files: Vec::new(),
         }
     }
-
-    pub fn increment(&mut self) {
-        let Some(existing) = self.state.selected() else {
-            self.select(0);
-            return;
+    fn load_mp3_file(&mut self) {
+        let path = match glob(&self.path) {
+            Ok(path) => path,
+            Err(e) => {
+                eprintln!("Invalid file path {}", &self.path);
+                return;
+            }
         };
-        let next = (existing + 1).min(self.max);
-        self.select(next);
-    }
-
-    pub fn decrement(&mut self) {
-        let Some(existing) = self.state.selected() else {
-            self.state.select(Some(self.max));
-            return;
-        };
-        let next = existing.saturating_sub(1);
-        self.select(next);
-    }
-
-    pub fn selected(&self) -> Option<usize> {
-        self.state.selected()
-    }
-
-    pub fn select(&mut self, new_idx: usize) {
-        let new_idx = new_idx.min(self.max);
-        self.state.select(Some(new_idx));
-    }
-}
-
-impl AsMut<ListState> for ListStateWrapper {
-    fn as_mut(&mut self) -> &mut ListState {
-        &mut self.state
-    }
-}
-
-impl AsRef<ListState> for ListStateWrapper {
-    fn as_ref(&self) -> &ListState {
-        &self.state
-    }
-}
-
-enum AppEvent {
-    MoveUp,
-    MoveDown,
-    MoveRight,
-    MoveLeft,
-}
-
-#[derive(Debug, Clone)]
-struct Button<'a> {
-    label: Line<'a>,
-    theme: Theme,
-    button_state: ButtonState,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Theme {
-    text: Color,
-    background: Color,
-    highlight: Color,
-    shadow: Color,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ButtonState {
-    Normal,
-    Selected,
-    Active,
-}
-
-const GREEN: Theme = Theme {
-    text: Color::DarkGray,
-    background: Color::LightGreen,
-    highlight: Color::Green,
-    shadow: Color::DarkGray,
-};
-
-impl<'a> Button<'a> {
-    fn new<T: Into<Line<'a>>>(label: T) -> Self {
-        Button {
-            label: label.into(),
-            theme: GREEN,
-            button_state: ButtonState::Normal,
+        let mut files: Vec<_> = Vec::new();
+        for entry in path {
+            match entry {
+                Ok(file) => {
+                    let f = file.display().to_string();
+                    files.push(f);
+                }
+                Err(e) => {
+                    eprintln!("Glob error {}", e);
+                    return;
+                }
+            };
         }
-    }
-
-    const fn theme(mut self, theme: Theme) -> Self {
-        self.theme = theme;
-        self
-    }
-
-    const fn button_state(mut self, button_state: ButtonState) -> Self {
-        self.button_state = button_state;
-        self
+        self.files = files;
     }
 }
 
-impl Button<'_> {
-    const fn colors(&self) -> (Color, Color, Color, Color) {
-        let theme = self.theme;
-        match self.button_state {
-            ButtonState::Normal => (theme.background, theme.text, theme.shadow, theme.highlight),
-            ButtonState::Selected => (theme.highlight, theme.text, theme.shadow, theme.highlight),
-            ButtonState::Active => (theme.background, theme.text, theme.highlight, theme.shadow),
-        }
-    }
+#[derive(PartialEq)]
+enum Focus {
+    FolderList,
+    Buttons,
 }
 
-impl<'a> Widget for Button<'a> {
-    #[allow(clippy::cast_possible_truncation)]
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        // let background
-    }
+struct App<'a> {
+    folder_state: ListState,
+
+    audio_folder: AudioFolder<'a>,
+    buttons: Vec<&'a str>,
+    button_index: usize,
+    focus: Focus,
+    tick_rate: Duration,
+    should_quit: bool,
 }
 
-#[derive(Debug, Clone)]
-pub struct App {
-    main_menu_state: ListStateWrapper,
-}
+impl<'a> App<'a> {
+    fn new() -> Self {
+        let path = "/home/kai/Downloads/CD 2 ready/*";
+        let mut audio_folder = AudioFolder::new(path);
+        audio_folder.load_mp3_file();
 
-impl Default for App {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Widget for &mut App {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        let horizontal_ =
-            Layout::horizontal([Constraint::Percentage(10), Constraint::Percentage(90)]);
-        let [menu_area, display_area] = horizontal_.areas(area);
-
-        let vertical_ = Layout::vertical([Constraint::Percentage(80), Constraint::Percentage(10), Constraint::Percentage(10)]);
-
-        let [draw, progress_bar, map] = vertical_.areas(display_area);
-
-        let mut constraints = vec![];
-        constraints.extend(std::iter::repeat(Constraint::Percentage(17)).take(5));
-        constraints.extend(std::iter::repeat(Constraint::Percentage(5)).take(3));
-
-        let hr = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(constraints);
-
-        let [p1, p2, p3, p4, p5, p6, p7, p8] = hr.areas(map);
-
-        self.render_audio_folder(menu_area, buf);
-
-        self.render_page(draw, buf);
-
-        self.render_progress_bar(progress_bar, buf);
-
-        self.render_button("Recovery ⟲".to_string(), p1, buf);
-        self.render_button("Backward 5s↩".to_string(), p2, buf);
-        self.render_button("Play ▶".to_string(), p3, buf);
-        self.render_button("Pause ❙❙".to_string(), p4, buf);
-        self.render_button("Forward ↪5s".to_string(), p5, buf);
-        self.render_button("▶▶".to_string(), p6, buf);
-        self.render_button("🕪".to_string(), p7, buf);
-        self.render_button("🕩".to_string(), p8, buf);
-    }
-}
-
-impl App {
-    pub fn new() -> Self {
+        let mut folder_state = ListState::default();
+        folder_state.select(Some(0));
         Self {
-            main_menu_state: ListStateWrapper::new(4),
+            folder_state,
+
+            audio_folder: audio_folder,
+            buttons: vec!["⟲", "⏮", "▶", "❙❙", "⏭"],
+            button_index: 0,
+            focus: Focus::FolderList,
+            tick_rate: Duration::from_millis(200),
+            should_quit: false,
         }
     }
-    pub fn tick(&mut self, terminal: &mut Terminal<impl Backend>) -> Result<(), Box<dyn Error>> {
-        self.draw(terminal)?;
+
+    fn next_folder(&mut self) {
+        let i = match self.folder_state.selected() {
+            Some(i) => (i + 1) % self.audio_folder.files.len(),
+            None => 0,
+        };
+        self.folder_state.select(Some(i));
+    }
+
+    fn prev_folder(&mut self) {
+        let i = match self.folder_state.selected() {
+            Some(i) => {
+                if i == 0 {
+                    self.audio_folder.files.len() - 1
+                } else {
+                    i - 1
+                }
+            }
+            None => 0,
+        };
+        self.folder_state.select(Some(i));
+    }
+
+    fn next_button(&mut self) {
+        self.button_index = (self.button_index + 1) % self.buttons.len();
+    }
+
+    fn prev_button(&mut self) {
+        self.button_index = if self.button_index == 0 {
+            self.buttons.len() - 1
+        } else {
+            self.button_index - 1
+        };
+    }
+}
+
+impl App<'_> {
+    fn handle_event(&mut self) -> Result<(), std::io::Error> {
+        if event::poll(self.tick_rate)? {
+            if let CEvent::Key(key_event) = event::read()? {
+                match key_event.code {
+                    KeyCode::Char('q') => self.should_quit = true,
+                    KeyCode::Tab => {
+                        self.focus = if self.focus == Focus::Buttons {
+                            Focus::FolderList
+                        } else {
+                            Focus::Buttons
+                        }
+                    }
+
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        if self.focus == Focus::FolderList {
+                            self.next_folder();
+                        }
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        if self.focus == Focus::FolderList {
+                            self.prev_folder();
+                        }
+                    }
+
+                    KeyCode::Char('h') | KeyCode::Left => {
+                        if self.focus == Focus::Buttons {
+                            self.prev_button();
+                        }
+                    }
+                    KeyCode::Char('l') | KeyCode::Right => {
+                        if self.focus == Focus::Buttons {
+                            self.next_button();
+                        }
+                    }
+                    KeyCode::Char(' ') => if self.focus == Focus::Buttons {},
+
+                    _ => println!("Key is not handled {:?}", key_event),
+                }
+            }
+        }
+
         Ok(())
     }
-    fn draw(&mut self, terminal: &mut Terminal<impl Backend>) -> std::io::Result<()> {
-        terminal.draw(|f| f.render_widget(self, f.area()))?;
-        Ok(())
+}
+
+impl App<'_> {
+    fn render_main_page(&mut self, frame: &mut ratatui::Frame) {
+        let horizontal =
+            Layout::horizontal([Constraint::Percentage(20), Constraint::Percentage(80)])
+                .split(frame.area());
+        self.render_list_files(frame, horizontal[0]);
+
+        let vertical = Layout::vertical([
+            Constraint::Percentage(70),
+            Constraint::Percentage(10),
+            Constraint::Percentage(20),
+        ])
+        .split(horizontal[1]);
+
+        self.render_button(frame, vertical[2]);
     }
-    fn event(&mut self, event: AppEvent) {
-        match event {
-            AppEvent::MoveUp => println!("MoveUp"),
-            AppEvent::MoveDown => println!("MoveDown"),
-            AppEvent::MoveLeft => println!("MoveLeft"),
-            AppEvent::MoveRight => println!("MoveRight"),
-            _ => println!("")
+
+    fn render_list_files(&mut self, frame: &mut ratatui::Frame, area: Rect) {
+        let folder_items: Vec<_> = self
+            .audio_folder
+            .files
+            .iter()
+            .map(|f| ListItem::new(f.clone()))
+            .collect();
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("Queue")
+            .title_alignment(ratatui::layout::Alignment::Center);
+        let hs = Style::default().fg(Color::Black).bg(Color::Green);
+
+        let folder_list = List::new(folder_items)
+            .block(block)
+            .highlight_style(hs)
+            .highlight_symbol(" >");
+        frame.render_stateful_widget(folder_list, area, &mut self.folder_state);
+    }
+
+    fn render_button(&mut self, frame: &mut ratatui::Frame, area: Rect) {
+        let button_chunks = Layout::horizontal([Constraint::Percentage(20); 5]).split(area);
+
+        for (i, button) in self.buttons.iter().enumerate() {
+            let is_selected = self.focus == Focus::Buttons && self.button_index == i;
+            let style = if is_selected {
+                Style::default().fg(Color::Black).bg(Color::Green)
+            } else {
+                Style::default()
+            };
+            let block = Block::default().borders(Borders::ALL);
+            let p = Paragraph::new(*button)
+                .style(style)
+                .block(block)
+                .alignment(ratatui::layout::Alignment::Center);
+            frame.render_widget(p, button_chunks[i]);
         }
-    }
-
-
-    fn render_audio_folder(&mut self, area: Rect, buf: &mut Buffer) {
-        let block = Block::bordered()
-            .title("Audio Folder")
-            .title_alignment(Alignment::Center)
-            .border_set(ratatui::symbols::border::PLAIN)
-            // .borders(Borders::TOP | Borders::LEFT | Borders::BOTTOM)
-            .style(DEFAULT_STYLE);
-        let content_area = block.inner(area);
-        block.render(area, buf);
-        let list = List::new([
-            ListItem::from("Home"),
-            "Work".into(),
-            "Open Source".into(),
-            "Education".into(),
-        ]);
-        let list = list.highlight_style(Style::new().bg(Color::Green).fg(Color::Black));
-        StatefulWidget::render(list, content_area, buf, self.main_menu_state.as_mut());
-    }
-    fn render_progress_bar(&mut self, area: Rect, buf: &mut Buffer) {
-        let block = Block::bordered().style(DEFAULT_STYLE);
-        // let inner_area = block.inner(area);
-        let g = Gauge::default().block(block).gauge_style(GAUGE1_COLOR);
-        g.render(area, buf);
-    }
-    fn render_button(&mut self, text: String, area: Rect, buf: &mut Buffer) {
-        let block = Block::bordered().style(DEFAULT_STYLE);
-        let inner_area = block.inner(area);
-        block.render(area, buf);
-
-        let vertical_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage(40),
-                Constraint::Length(1),
-                Constraint::Percentage(40),
-            ])
-            .split(inner_area);
-
-        let p = Paragraph::new(text)
-            .alignment(Alignment::Center)
-            .style(DEFAULT_STYLE);
-        p.render(vertical_chunks[1], buf);
-    }
-    fn render_page(&mut self, area: Rect, buf: &mut Buffer) {
-        let block = Block::bordered()
-            .title("▶ ❙❙  ↪5s  5s↩   ⟲ ")
-            .title_alignment(Alignment::Center)
-            .border_set(ratatui::symbols::border::PLAIN)
-            // .borders(Borders::TOP | Borders::LEFT | Borders::BOTTOM)
-            .style(DEFAULT_STYLE);
-        let content_area = block.inner(area);
-        block.render(area, buf);
-        let list = List::new([
-            ListItem::from("Home"),
-            "Work".into(),
-            "Open Source".into(),
-            "Education".into(),
-        ]);
-        let list = list.highlight_style(Style::new().bg(Color::Green).fg(Color::Black));
-        StatefulWidget::render(list, content_area, buf, self.main_menu_state.as_mut());
     }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new();
 
-    loop {
-        app.tick(&mut terminal)?;
+    while !app.should_quit {
+        terminal.draw(|f| {
+            app.render_main_page(f);
+        })?;
 
-        // Input handling
-        if event::poll(Duration::from_millis(200))? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') => break,
-                    _ => {}
-                }
-            }
-        }
+        app.handle_event()?;
     }
 
-    // Cleanup
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     Ok(())
