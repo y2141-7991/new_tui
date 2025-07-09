@@ -30,6 +30,7 @@ enum AudioEvent {
     Play,
     Pause,
     SpeedUp,
+    SpeedDown,
     SeekForward,
     SeekBackward,
 }
@@ -66,7 +67,7 @@ impl AudioService {
     }
     fn seek_forward(&mut self) {
         let mut current = self.sink.get_pos();
-        if current.as_secs() as usize >= self.length - 5 {
+        if (current.as_secs() as usize) >= (self.length - 5) {
             current = Duration::from_secs(self.length as u64)
         } else {
             current += Duration::from_secs(5);
@@ -154,7 +155,7 @@ impl<'a> App<'a> {
 
             audio_service: AudioService::new(),
             audio_folder: audio_folder,
-            buttons: vec!["⟲", "⏮", "▶", "❙❙", "⏭"],
+            buttons: vec!["Backward 5s↩", "Forward ↪5s", "⏴⏴", "▶", "⏸", "⏵⏵"],
             button_index: 0,
             focus: Focus::FolderList,
             tick_rate: Duration::from_millis(200),
@@ -237,12 +238,21 @@ impl App<'_> {
                             if self.buttons[self.button_index] == "▶" {
                                 self.audio_service.play(self.audio_folder.files[i].clone());
                             }
-                            if self.buttons[self.button_index] == "❙❙" {
+                            if self.buttons[self.button_index] == "⏸" {
                                 self.audio_service.pause();
+                            }
+                            match self.buttons[self.button_index] {
+                                "▶" => self.audio_service.play(self.audio_folder.files[i].clone()),
+                                "⏸" => self.audio_service.pause(),
+                                "⏵⏵" => self.audio_service.speed_up(),
+                                "⏴⏴" => self.audio_service.speed_down(),
+                                "Forward ↪5s" => self.audio_service.seek_forward(),
+                                "Backward 5s↩" => self.audio_service.seek_backward(),
+                                _ => println!("")
                             }
                         }
                     },
-                    _ => println!("Key is not handled {:?}", key_event),
+                    _ => eprintln!("Key is not handled {:?}", key_event),
                 }
             }
         }
@@ -290,7 +300,7 @@ impl App<'_> {
     }
 
     fn render_button(&mut self, frame: &mut ratatui::Frame, area: Rect) {
-        let button_chunks = Layout::horizontal([Constraint::Percentage(20); 5]).split(area);
+        let button_chunks = Layout::horizontal([Constraint::Percentage(20); 6]).split(area);
 
         for (i, button) in self.buttons.iter().enumerate() {
             let is_selected = self.focus == Focus::Buttons && self.button_index == i;
@@ -301,7 +311,7 @@ impl App<'_> {
             };
             let block = Block::default().borders(Borders::ALL).padding(Padding::horizontal(1));
             let inner = block.inner(button_chunks[i]);
-            let vertical = Layout::vertical([Constraint::Percentage(40), Constraint::Length(1), Constraint::Percentage(40)]).split(inner);
+            let vertical = Layout::vertical([Constraint::Percentage(35), Constraint::Length(2), Constraint::Percentage(40)]).split(inner);
 
             let p = Paragraph::new(*button)
                 .style(style)
