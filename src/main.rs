@@ -48,7 +48,6 @@ impl AudioService {
         }
     }
     fn play(&mut self, f: String) {
-        self.sink.clear();
         let file = File::open(f).expect("Can not file this file");
         let source = Decoder::new(file).expect("Decoder Error");
         self.sink.append(source);
@@ -235,7 +234,12 @@ impl App<'_> {
                     }
                     KeyCode::Char(' ') => if self.focus == Focus::Buttons {
                         if let Some(i) = self.folder_state.selected() {
-                            self.audio_service.play(self.audio_folder.files[i].clone());
+                            if self.buttons[self.button_index] == "▶" {
+                                self.audio_service.play(self.audio_folder.files[i].clone());
+                            }
+                            if self.buttons[self.button_index] == "❙❙" {
+                                self.audio_service.pause();
+                            }
                         }
                     },
                     _ => println!("Key is not handled {:?}", key_event),
