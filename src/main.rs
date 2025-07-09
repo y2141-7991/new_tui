@@ -1,18 +1,23 @@
 use std::{error::Error, fs::File, io, time::Duration};
 
+use color_eyre::owo_colors::OwoColorize;
 use crossterm::{
     event::{self, Event as CEvent, KeyCode},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use glob::glob;
-use ratatui::widgets::{ListState, Padding, Widget};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    text::Span,
     widgets::{Block, Borders, List, ListItem, Paragraph},
+};
+use ratatui::{
+    symbols::block,
+    widgets::{Gauge, ListState, Padding, Widget},
 };
 use rodio::{Decoder, OutputStream, Sink, Source};
 
@@ -39,18 +44,22 @@ impl AudioService {
     fn new() -> Self {
         let (_stream, _hanlder) = OutputStream::try_default().expect("Can not init OutputStream");
         let sink = Sink::try_new(&_hanlder).expect("Can not init Sink and PlayError");
-        let sink_len = sink.len();
         Self {
             _stream,
             sink,
             audio_event: AudioEvent::default(),
             speed: 1.0,
-            length: sink_len,
+            length: 0,
         }
     }
     fn play(&mut self, f: String) {
         let file = File::open(f).expect("Can not file this file");
         let source = Decoder::new(file).expect("Decoder Error");
+        self.length = if let Some(d) = source.total_duration() {
+            d.as_secs() as usize
+        } else {
+            0
+        };
         self.sink.append(source);
         self.sink.play();
     }
@@ -67,7 +76,7 @@ impl AudioService {
     }
     fn seek_forward(&mut self) {
         let mut current = self.sink.get_pos();
-        if (current.as_secs() as usize) >= (self.length - 5) {
+        if self.length > 5 && (current.as_secs() as usize) >= (self.length - 5) {
             current = Duration::from_secs(self.length as u64)
         } else {
             current += Duration::from_secs(5);
@@ -82,6 +91,9 @@ impl AudioService {
             current -= Duration::from_secs(5);
         }
         self.sink.try_seek(current).expect("Can not seek more");
+    }
+    fn get_current_position(&self) -> Duration {
+        self.sink.get_pos()
     }
 }
 
@@ -131,7 +143,6 @@ enum Focus {
 
 struct App<'a> {
     folder_state: ListState,
-
 
     audio_service: AudioService,
     audio_folder: AudioFolder<'a>,
@@ -233,19 +244,23 @@ impl App<'_> {
                             self.next_button();
                         }
                     }
-                    KeyCode::Char(' ') => if self.focus == Focus::Buttons {
-                        if let Some(i) = self.folder_state.selected() {
-                            match self.buttons[self.button_index] {
-                                "▶" => self.audio_service.play(self.audio_folder.files[i].clone()),
-                                "⏸" => self.audio_service.pause(),
-                                "⏵⏵" => self.audio_service.speed_up(),
-                                "⏴⏴" => self.audio_service.speed_down(),
-                                "Forward ↪5s" => self.audio_service.seek_forward(),
-                                "Backward 5s↩" => self.audio_service.seek_backward(),
-                                _ => println!("")
+                    KeyCode::Char(' ') => {
+                        if self.focus == Focus::Buttons {
+                            if let Some(i) = self.folder_state.selected() {
+                                match self.buttons[self.button_index] {
+                                    "▶" => {
+                                        self.audio_service.play(self.audio_folder.files[i].clone())
+                                    }
+                                    "⏸" => self.audio_service.pause(),
+                                    "⏵⏵" => self.audio_service.speed_up(),
+                                    "⏴⏴" => self.audio_service.speed_down(),
+                                    "Forward ↪5s" => self.audio_service.seek_forward(),
+                                    "Backward 5s↩" => self.audio_service.seek_backward(),
+                                    _ => println!(""),
+                                }
                             }
                         }
-                    },
+                    }
                     _ => eprintln!("Key is not handled {:?}", key_event),
                 }
             }
@@ -269,6 +284,7 @@ impl App<'_> {
         ])
         .split(horizontal[1]);
 
+        self.render_progress_bar(frame, vertical[1]);
         self.render_button(frame, vertical[2]);
     }
 
@@ -299,13 +315,23 @@ impl App<'_> {
         for (i, button) in self.buttons.iter().enumerate() {
             let is_selected = self.focus == Focus::Buttons && self.button_index == i;
             let style = if is_selected {
-                Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Green)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
-            let block = Block::default().borders(Borders::ALL).padding(Padding::horizontal(1));
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .padding(Padding::horizontal(1));
             let inner = block.inner(button_chunks[i]);
-            let vertical = Layout::vertical([Constraint::Percentage(35), Constraint::Length(2), Constraint::Percentage(40)]).split(inner);
+            let vertical = Layout::vertical([
+                Constraint::Percentage(40),
+                Constraint::Length(1),
+                Constraint::Percentage(40),
+            ])
+            .split(inner);
 
             let p = Paragraph::new(*button)
                 .style(style)
@@ -314,6 +340,17 @@ impl App<'_> {
             frame.render_widget(p, vertical[1]);
             frame.render_widget(block, button_chunks[i]);
         }
+    }
+    fn render_progress_bar(&mut self, frame: &mut ratatui::Frame, area: Rect) {
+        let span = Span::styled(
+            format!("{:?}", self.audio_service.get_current_position()),
+            Style::new(),
+        );
+        let gauge = Gauge::default()
+            .block(Block::default().title("title").borders(Borders::ALL))
+            .gauge_style(Style::default().fg(Color::Black).bg(Color::Green))
+            .label(span);
+        frame.render_widget(gauge, area);
     }
 }
 
