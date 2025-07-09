@@ -144,7 +144,7 @@ struct App<'a> {
 
 impl<'a> App<'a> {
     fn new() -> Self {
-        let path = "/home/ynguyen/Downloads/mp3_file/*";
+        let path = "sample_mp3/*";
         let mut audio_folder = AudioFolder::new(path);
         audio_folder.load_mp3_file();
 
