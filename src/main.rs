@@ -16,12 +16,11 @@ use ratatui::{
 };
 use rodio::{Decoder, OutputStream, Sink};
 
-
 struct AudioServices {
     sink: Sink,
     audio_event: AudioEvent,
     speed: f32,
-    length: usize
+    length: usize,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -39,7 +38,12 @@ impl AudioServices {
         let (_stream, _hanlder) = OutputStream::try_default().expect("Can not init OutputStream");
         let sink = Sink::try_new(&_hanlder).expect("Can not init Sink and PlayError");
         let sink_len = sink.len();
-        Self { sink, audio_event: AudioEvent::default() , speed: 1.0 , length: sink_len }
+        Self {
+            sink,
+            audio_event: AudioEvent::default(),
+            speed: 1.0,
+            length: sink_len,
+        }
     }
     fn play(&mut self, f: String) {
         self.sink.clear();
@@ -63,8 +67,7 @@ impl AudioServices {
         let mut current = self.sink.get_pos();
         if current.as_secs() as usize >= self.length - 5 {
             current = Duration::from_secs(self.length as u64)
-        }
-        else {
+        } else {
             current += Duration::from_secs(5);
         }
         self.sink.try_seek(current).expect("Can not seek more");
@@ -73,8 +76,7 @@ impl AudioServices {
         let mut current = self.sink.get_pos();
         if current.as_secs() < 5 {
             current = Duration::from_secs(0)
-        }
-        else {
+        } else {
             current -= Duration::from_secs(5);
         }
         self.sink.try_seek(current).expect("Can not seek more");
