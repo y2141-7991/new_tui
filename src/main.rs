@@ -6,7 +6,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use glob::glob;
-use ratatui::widgets::{ListState, Widget};
+use ratatui::widgets::{ListState, Padding, Widget};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -283,16 +283,20 @@ impl App<'_> {
         for (i, button) in self.buttons.iter().enumerate() {
             let is_selected = self.focus == Focus::Buttons && self.button_index == i;
             let style = if is_selected {
-                Style::default().fg(Color::Black).bg(Color::Green)
+                Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
-            let block = Block::default().borders(Borders::ALL);
+            let block = Block::default().borders(Borders::ALL).padding(Padding::horizontal(1));
+            let inner = block.inner(button_chunks[i]);
+            let vertical = Layout::vertical([Constraint::Percentage(40), Constraint::Length(1), Constraint::Percentage(40)]).split(inner);
+
             let p = Paragraph::new(*button)
                 .style(style)
-                .block(block)
                 .alignment(ratatui::layout::Alignment::Center);
-            frame.render_widget(p, button_chunks[i]);
+
+            frame.render_widget(p, vertical[1]);
+            frame.render_widget(block, button_chunks[i]);
         }
     }
 }
