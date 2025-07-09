@@ -1,4 +1,4 @@
-use std::{error::Error, io, time::Duration};
+use std::{error::Error, fs::File, io, time::Duration};
 
 use crossterm::{
     event::{self, Event as CEvent, KeyCode},
@@ -14,6 +14,72 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
+use rodio::{Decoder, OutputStream, Sink};
+
+
+struct AudioServices {
+    sink: Sink,
+    audio_event: AudioEvent,
+    speed: f32,
+    length: usize
+}
+
+#[derive(Debug, Default, Clone)]
+enum AudioEvent {
+    #[default]
+    Play,
+    Pause,
+    SpeedUp,
+    SeekForward,
+    SeekBackward,
+}
+
+impl AudioServices {
+    fn new() -> Self {
+        let (_stream, _hanlder) = OutputStream::try_default().expect("Can not init OutputStream");
+        let sink = Sink::try_new(&_hanlder).expect("Can not init Sink and PlayError");
+        let sink_len = sink.len();
+        Self { sink, audio_event: AudioEvent::default() , speed: 1.0 , length: sink_len }
+    }
+    fn play(&mut self, f: String) {
+        self.sink.clear();
+        let file = File::open(f).expect("Can not file this file");
+        let source = Decoder::new(file).expect("Decoder Error");
+        self.sink.append(source);
+        self.sink.play();
+    }
+    fn pause(&mut self) {
+        self.sink.pause();
+    }
+    fn speed_up(&mut self) {
+        self.speed += 0.25;
+        self.sink.set_speed(self.speed);
+    }
+    fn speed_down(&mut self) {
+        self.speed -= 0.25;
+        self.sink.set_speed(self.speed);
+    }
+    fn seek_forward(&mut self) {
+        let mut current = self.sink.get_pos();
+        if current.as_secs() as usize >= self.length - 5 {
+            current = Duration::from_secs(self.length as u64)
+        }
+        else {
+            current += Duration::from_secs(5);
+        }
+        self.sink.try_seek(current).expect("Can not seek more");
+    }
+    fn seek_backward(&mut self) {
+        let mut current = self.sink.get_pos();
+        if current.as_secs() < 5 {
+            current = Duration::from_secs(0)
+        }
+        else {
+            current -= Duration::from_secs(5);
+        }
+        self.sink.try_seek(current).expect("Can not seek more");
+    }
+}
 
 #[derive(Debug)]
 struct AudioFolder<'a> {
@@ -72,7 +138,7 @@ struct App<'a> {
 
 impl<'a> App<'a> {
     fn new() -> Self {
-        let path = "/home/kai/Downloads/CD 2 ready/*";
+        let path = "/home/ynguyen/Downloads/mp3_file/*";
         let mut audio_folder = AudioFolder::new(path);
         audio_folder.load_mp3_file();
 
@@ -174,7 +240,7 @@ impl App<'_> {
 impl App<'_> {
     fn render_main_page(&mut self, frame: &mut ratatui::Frame) {
         let horizontal =
-            Layout::horizontal([Constraint::Percentage(20), Constraint::Percentage(80)])
+            Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
                 .split(frame.area());
         self.render_list_files(frame, horizontal[0]);
 
