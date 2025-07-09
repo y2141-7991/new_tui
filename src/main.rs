@@ -235,12 +235,6 @@ impl App<'_> {
                     }
                     KeyCode::Char(' ') => if self.focus == Focus::Buttons {
                         if let Some(i) = self.folder_state.selected() {
-                            if self.buttons[self.button_index] == "▶" {
-                                self.audio_service.play(self.audio_folder.files[i].clone());
-                            }
-                            if self.buttons[self.button_index] == "⏸" {
-                                self.audio_service.pause();
-                            }
                             match self.buttons[self.button_index] {
                                 "▶" => self.audio_service.play(self.audio_folder.files[i].clone()),
                                 "⏸" => self.audio_service.pause(),
