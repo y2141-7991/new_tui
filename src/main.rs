@@ -14,9 +14,10 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
-use rodio::{Decoder, OutputStream, Sink};
+use rodio::{Decoder, OutputStream, Sink, Source};
 
-struct AudioServices {
+struct AudioService {
+    _stream: OutputStream,
     sink: Sink,
     audio_event: AudioEvent,
     speed: f32,
@@ -33,12 +34,13 @@ enum AudioEvent {
     SeekBackward,
 }
 
-impl AudioServices {
+impl AudioService {
     fn new() -> Self {
         let (_stream, _hanlder) = OutputStream::try_default().expect("Can not init OutputStream");
         let sink = Sink::try_new(&_hanlder).expect("Can not init Sink and PlayError");
         let sink_len = sink.len();
         Self {
+            _stream,
             sink,
             audio_event: AudioEvent::default(),
             speed: 1.0,
@@ -130,6 +132,8 @@ enum Focus {
 struct App<'a> {
     folder_state: ListState,
 
+
+    audio_service: AudioService,
     audio_folder: AudioFolder<'a>,
     buttons: Vec<&'a str>,
     button_index: usize,
@@ -149,6 +153,7 @@ impl<'a> App<'a> {
         Self {
             folder_state,
 
+            audio_service: AudioService::new(),
             audio_folder: audio_folder,
             buttons: vec!["⟲", "⏮", "▶", "❙❙", "⏭"],
             button_index: 0,
@@ -228,8 +233,11 @@ impl App<'_> {
                             self.next_button();
                         }
                     }
-                    KeyCode::Char(' ') => if self.focus == Focus::Buttons {},
-
+                    KeyCode::Char(' ') => if self.focus == Focus::Buttons {
+                        if let Some(i) = self.folder_state.selected() {
+                            self.audio_service.play(self.audio_folder.files[i].clone());
+                        }
+                    },
                     _ => println!("Key is not handled {:?}", key_event),
                 }
             }
