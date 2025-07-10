@@ -15,7 +15,6 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 use ratatui::{
-    symbols::block,
     widgets::{Gauge, ListState, Padding, Widget},
 };
 use rodio::{Decoder, OutputStream, Sink, Source};
@@ -23,13 +22,17 @@ use rodio::{Decoder, OutputStream, Sink, Source};
 const CUSTOM_LABEL_COLOR: Color = tailwind::CYAN.c800;
 const GAUGE3_COLOR: Color = tailwind::BLUE.c800;
 
-struct Buttons<'a> {
-    states: Vec<&'a str>,
-    
+struct Buttons {
+    states: ButtonStates,
 }
 
+
 enum ButtonStates {
-    
+    PlayOrPause,
+    SpeedUp,
+    SpeedDown,
+    Forward,
+    Backward,
 }
 
 struct AudioService {
@@ -40,15 +43,11 @@ struct AudioService {
     length: usize,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 enum AudioEvent {
-    #[default]
     Play,
+    #[default]
     Pause,
-    SpeedUp,
-    SpeedDown,
-    SeekForward,
-    SeekBackward,
 }
 
 impl AudioService {
@@ -172,12 +171,13 @@ impl<'a> App<'a> {
 
         let mut folder_state = ListState::default();
         folder_state.select(Some(0));
+
         Self {
             folder_state,
 
             audio_service: AudioService::new(),
             audio_folder: audio_folder,
-            buttons: vec!["-5s↩", "+↪5s", "⏴⏴", "▶", "⏸", "⏵⏵"],
+            buttons: vec!["-5s↩", "+↪5s", "◀◀", "▶⏸", "▶▶", "▶▶"],
             button_index: 0,
             focus: Focus::FolderList,
             tick_rate: Duration::from_millis(200),
@@ -259,10 +259,18 @@ impl App<'_> {
                         if self.focus == Focus::Buttons {
                             if let Some(i) = self.folder_state.selected() {
                                 match self.buttons[self.button_index] {
-                                    "▶" => {
-                                        self.audio_service.play(self.audio_folder.files[i].clone())
+                                    "▶⏸" => {
+                                        if self.audio_service.audio_event == AudioEvent::Play {
+                                            self.audio_service.audio_event = AudioEvent::Pause;
+                                            self.audio_service.pause();
+
+                                        }
+                                        else {
+                                            self.audio_service.audio_event = AudioEvent::Play;
+                                            self.audio_service.play(self.audio_folder.files[i].clone())
+                                        }
+                                        
                                     }
-                                    "❚❚" => self.audio_service.pause(),
                                     "▶▶" => self.audio_service.speed_up(),
                                     "◀◀" => self.audio_service.speed_down(),
                                     "+↪5s" => self.audio_service.seek_forward(),
