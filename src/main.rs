@@ -1,6 +1,5 @@
 use std::{error::Error, fs::File, io, time::Duration};
 
-use color_eyre::owo_colors::OwoColorize;
 use crossterm::{
     event::{self, Event as CEvent, KeyCode},
     execute,
@@ -11,7 +10,7 @@ use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Modifier, Style, palette::tailwind},
     text::Span,
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
@@ -20,6 +19,8 @@ use ratatui::{
     widgets::{Gauge, ListState, Padding, Widget},
 };
 use rodio::{Decoder, OutputStream, Sink, Source};
+
+const CUSTOM_LABEL_COLOR: Color = tailwind::WHITE;
 
 struct AudioService {
     _stream: OutputStream,
@@ -49,7 +50,7 @@ impl AudioService {
             sink,
             audio_event: AudioEvent::default(),
             speed: 1.0,
-            length: 0,
+            length: 1,
         }
     }
     fn play(&mut self, f: String) {
@@ -166,7 +167,7 @@ impl<'a> App<'a> {
 
             audio_service: AudioService::new(),
             audio_folder: audio_folder,
-            buttons: vec!["Backward 5s↩", "Forward ↪5s", "⏴⏴", "▶", "⏸", "⏵⏵"],
+            buttons: vec!["-5s↩", "+↪5s", "⏴⏴", "▶", "⏸", "⏵⏵"],
             button_index: 0,
             focus: Focus::FolderList,
             tick_rate: Duration::from_millis(200),
@@ -251,11 +252,11 @@ impl App<'_> {
                                     "▶" => {
                                         self.audio_service.play(self.audio_folder.files[i].clone())
                                     }
-                                    "⏸" => self.audio_service.pause(),
-                                    "⏵⏵" => self.audio_service.speed_up(),
-                                    "⏴⏴" => self.audio_service.speed_down(),
-                                    "Forward ↪5s" => self.audio_service.seek_forward(),
-                                    "Backward 5s↩" => self.audio_service.seek_backward(),
+                                    "❚❚" => self.audio_service.pause(),
+                                    "▶▶" => self.audio_service.speed_up(),
+                                    "◀◀" => self.audio_service.speed_down(),
+                                    "+↪5s" => self.audio_service.seek_forward(),
+                                    "-5s↩" => self.audio_service.seek_backward(),
                                     _ => println!(""),
                                 }
                             }
@@ -278,8 +279,8 @@ impl App<'_> {
         self.render_list_files(frame, horizontal[0]);
 
         let vertical = Layout::vertical([
-            Constraint::Percentage(70),
-            Constraint::Percentage(10),
+            Constraint::Percentage(60),
+            Constraint::Percentage(20),
             Constraint::Percentage(20),
         ])
         .split(horizontal[1]);
@@ -342,16 +343,33 @@ impl App<'_> {
         }
     }
     fn render_progress_bar(&mut self, frame: &mut ratatui::Frame, area: Rect) {
+        let elapsed_time = formart_duration(self.audio_service.get_current_position());
+        let total = formart_duration(Duration::new(self.audio_service.length as u64, 0));
+        let ratio = if self.audio_service.length == 0 {
+            0.0
+        } else {
+            self.audio_service.get_current_position().as_secs_f64()
+                / self.audio_service.length as f64
+        };
+
         let span = Span::styled(
-            format!("{:?}", self.audio_service.get_current_position()),
-            Style::new(),
+            format!("{}/{}", elapsed_time, total),
+            Style::new().fg(CUSTOM_LABEL_COLOR),
         );
         let gauge = Gauge::default()
-            .block(Block::default().title("title").borders(Borders::ALL))
+            .block(Block::default().title("Time").borders(Borders::ALL))
             .gauge_style(Style::default().fg(Color::Black).bg(Color::Green))
+            .ratio(ratio)
             .label(span);
         frame.render_widget(gauge, area);
     }
+}
+
+fn formart_duration(d: Duration) -> String {
+    let total_secs = d.as_secs();
+    let minutes = total_secs / 60;
+    let seconds = total_secs % 60;
+    format!("{:02}:{:02}", minutes, seconds)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
