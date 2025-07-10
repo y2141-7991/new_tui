@@ -20,7 +20,17 @@ use ratatui::{
 };
 use rodio::{Decoder, OutputStream, Sink, Source};
 
-const CUSTOM_LABEL_COLOR: Color = tailwind::WHITE;
+const CUSTOM_LABEL_COLOR: Color = tailwind::CYAN.c800;
+const GAUGE3_COLOR: Color = tailwind::BLUE.c800;
+
+struct Buttons<'a> {
+    states: Vec<&'a str>,
+    
+}
+
+enum ButtonStates {
+    
+}
 
 struct AudioService {
     _stream: OutputStream,
@@ -50,7 +60,7 @@ impl AudioService {
             sink,
             audio_event: AudioEvent::default(),
             speed: 1.0,
-            length: 1,
+            length: 0,
         }
     }
     fn play(&mut self, f: String) {
@@ -358,7 +368,7 @@ impl App<'_> {
         );
         let gauge = Gauge::default()
             .block(Block::default().title("Time").borders(Borders::ALL))
-            .gauge_style(Style::default().fg(Color::Black).bg(Color::Green))
+            .gauge_style(GAUGE3_COLOR)
             .ratio(ratio)
             .label(span);
         frame.render_widget(gauge, area);
