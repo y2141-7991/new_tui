@@ -365,11 +365,12 @@ impl App<'_> {
         let total = formart_duration(Duration::new(self.audio_service.length as u64, 0));
         let ratio = if self.audio_service.length == 0 {
             0.0
-        } else {
+        } else if (self.audio_service.get_current_position().as_secs_f64()
+                / self.audio_service.length as f64) > 1.0 {1.0} else {
             self.audio_service.get_current_position().as_secs_f64()
                 / self.audio_service.length as f64
         };
-
+        // println!("{}", ratio);
         let span = Span::styled(
             format!("{}/{}", elapsed_time, total),
             Style::new().fg(CUSTOM_LABEL_COLOR),
