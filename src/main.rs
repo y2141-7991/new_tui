@@ -370,7 +370,7 @@ impl App<'_> {
             self.audio_service.get_current_position().as_secs_f64()
                 / self.audio_service.length as f64
         };
-        // println!("{}", ratio);
+
         let span = Span::styled(
             format!("{}/{}", elapsed_time, total),
             Style::new().fg(CUSTOM_LABEL_COLOR),
