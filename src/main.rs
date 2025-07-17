@@ -15,7 +15,8 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 use ratatui::{
-    widgets::{Gauge, ListState, Padding, Widget},
+    style::Stylize,
+    widgets::{Clear, Gauge, ListState, Padding, Widget},
 };
 use rodio::{Decoder, OutputStream, Sink, Source};
 
@@ -25,7 +26,6 @@ const GAUGE3_COLOR: Color = tailwind::BLUE.c800;
 struct Buttons {
     states: ButtonStates,
 }
-
 
 enum ButtonStates {
     PlayOrPause,
@@ -149,6 +149,7 @@ impl AudioFolder<'_> {
 enum Focus {
     FolderList,
     Buttons,
+    Popup,
 }
 
 struct App<'a> {
@@ -177,7 +178,7 @@ impl<'a> App<'a> {
 
             audio_service: AudioService::new(),
             audio_folder: audio_folder,
-            buttons: vec!["-5s↩", "+↪5s", "◀◀", "▶⏸", "▶▶", "▶▶"],
+            buttons: vec!["-5s↩", "+↪5s", "◀◀", "▶⏸", "▶▶", ""],
             button_index: 0,
             focus: Focus::FolderList,
             tick_rate: Duration::from_millis(200),
@@ -233,6 +234,13 @@ impl App<'_> {
                             Focus::Buttons
                         }
                     }
+                    KeyCode::Char('s') => {
+                        if self.focus == Focus::Popup {
+                            self.focus = Focus::FolderList
+                        } else {
+                            self.focus = Focus::Popup
+                        }
+                    }
 
                     KeyCode::Char('j') | KeyCode::Down => {
                         if self.focus == Focus::FolderList {
@@ -263,13 +271,11 @@ impl App<'_> {
                                         if self.audio_service.audio_event == AudioEvent::Play {
                                             self.audio_service.audio_event = AudioEvent::Pause;
                                             self.audio_service.pause();
-
-                                        }
-                                        else {
+                                        } else {
                                             self.audio_service.audio_event = AudioEvent::Play;
-                                            self.audio_service.play(self.audio_folder.files[i].clone())
+                                            self.audio_service
+                                                .play(self.audio_folder.files[i].clone())
                                         }
-                                        
                                     }
                                     "▶▶" => self.audio_service.speed_up(),
                                     "◀◀" => self.audio_service.speed_down(),
@@ -305,6 +311,9 @@ impl App<'_> {
 
         self.render_progress_bar(frame, vertical[1]);
         self.render_button(frame, vertical[2]);
+        if self.focus == Focus::Popup {
+            self.render_search_box(frame);
+        }
     }
 
     fn render_list_files(&mut self, frame: &mut ratatui::Frame, area: Rect) {
@@ -366,7 +375,11 @@ impl App<'_> {
         let ratio = if self.audio_service.length == 0 {
             0.0
         } else if (self.audio_service.get_current_position().as_secs_f64()
-                / self.audio_service.length as f64) > 1.0 {1.0} else {
+            / self.audio_service.length as f64)
+            > 1.0
+        {
+            1.0
+        } else {
             self.audio_service.get_current_position().as_secs_f64()
                 / self.audio_service.length as f64
         };
@@ -382,6 +395,31 @@ impl App<'_> {
             .label(span);
         frame.render_widget(gauge, area);
     }
+
+    fn render_search_box(&mut self, frame: &mut ratatui::Frame) {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("Search")
+            .style(Style::default().fg(Color::Yellow));
+
+        let paragraph = Paragraph::new("Test_popup")
+            .style(Style::default().fg(Color::White))
+            .block(block);
+
+        let area = search_popup(frame.area(), 50, 25);
+        frame.render_widget(Clear, area);
+        frame.render_widget(paragraph, area);
+    }
+}
+
+fn search_popup(area: Rect, per_x: u16, per_y: u16) -> Rect {
+    let vertical =
+        Layout::vertical([Constraint::Percentage(per_y)]).flex(ratatui::layout::Flex::Center);
+    let horizontal =
+        Layout::horizontal([Constraint::Percentage(per_x)]).flex(ratatui::layout::Flex::Center);
+    let [area] = vertical.areas(area);
+    let [area] = horizontal.areas(area);
+    area
 }
 
 fn formart_duration(d: Duration) -> String {
