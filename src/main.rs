@@ -18,11 +18,12 @@ use ratatui::{
     style::Stylize,
     widgets::{Clear, Gauge, ListState, Padding, Widget},
 };
-use rodio::{Decoder, OutputStream, Sink, Source};
 
 mod audyo;
-use audyo::service::{AudioService, AudioEvent };
+use audyo::service::AudioService;
 mod app;
+use app::App;
+mod events;
 
 const CUSTOM_LABEL_COLOR: Color = tailwind::CYAN.c800;
 const GAUGE3_COLOR: Color = tailwind::BLUE.c800;
@@ -86,39 +87,9 @@ enum Focus {
     Popup,
 }
 
-struct App<'a> {
-    folder_state: ListState,
 
-    audio_service: AudioService,
-    audio_folder: AudioFolder<'a>,
-    buttons: Vec<&'a str>,
-    button_index: usize,
-    focus: Focus,
-    tick_rate: Duration,
-    should_quit: bool,
-}
 
 impl<'a> App<'a> {
-    fn new() -> Self {
-        let path = "sample_mp3/*";
-        let mut audio_folder = AudioFolder::new(path);
-        audio_folder.load_mp3_file();
-
-        let mut folder_state = ListState::default();
-        folder_state.select(Some(0));
-
-        Self {
-            folder_state,
-
-            audio_service: AudioService::new(),
-            audio_folder: audio_folder,
-            buttons: vec!["-5s↩", "+↪5s", "◀◀", "▶⏸", "▶▶", ""],
-            button_index: 0,
-            focus: Focus::FolderList,
-            tick_rate: Duration::from_millis(200),
-            should_quit: false,
-        }
-    }
 
     fn next_folder(&mut self) {
         let i = match self.folder_state.selected() {
@@ -155,79 +126,7 @@ impl<'a> App<'a> {
     }
 }
 
-impl App<'_> {
-    fn handle_event(&mut self) -> Result<(), std::io::Error> {
-        if event::poll(self.tick_rate)? {
-            if let CEvent::Key(key_event) = event::read()? {
-                match key_event.code {
-                    KeyCode::Char('q') => self.should_quit = true,
-                    KeyCode::Tab => {
-                        self.focus = if self.focus == Focus::Buttons {
-                            Focus::FolderList
-                        } else {
-                            Focus::Buttons
-                        }
-                    }
-                    KeyCode::Char('s') => {
-                        if self.focus == Focus::Popup {
-                            self.focus = Focus::FolderList
-                        } else {
-                            self.focus = Focus::Popup
-                        }
-                    }
 
-                    KeyCode::Char('j') | KeyCode::Down => {
-                        if self.focus == Focus::FolderList {
-                            self.next_folder();
-                        }
-                    }
-                    KeyCode::Char('k') | KeyCode::Up => {
-                        if self.focus == Focus::FolderList {
-                            self.prev_folder();
-                        }
-                    }
-
-                    KeyCode::Char('h') | KeyCode::Left => {
-                        if self.focus == Focus::Buttons {
-                            self.prev_button();
-                        }
-                    }
-                    KeyCode::Char('l') | KeyCode::Right => {
-                        if self.focus == Focus::Buttons {
-                            self.next_button();
-                        }
-                    }
-                    KeyCode::Char(' ') => {
-                        if self.focus == Focus::Buttons {
-                            if let Some(i) = self.folder_state.selected() {
-                                match self.buttons[self.button_index] {
-                                    "▶⏸" => {
-                                        if self.audio_service.audio_event == AudioEvent::Play {
-                                            self.audio_service.audio_event = AudioEvent::Pause;
-                                            self.audio_service.pause();
-                                        } else {
-                                            self.audio_service.audio_event = AudioEvent::Play;
-                                            self.audio_service
-                                                .play(self.audio_folder.files[i].clone())
-                                        }
-                                    }
-                                    "▶▶" => self.audio_service.speed_up(),
-                                    "◀◀" => self.audio_service.speed_down(),
-                                    "+↪5s" => self.audio_service.seek_forward(),
-                                    "-5s↩" => self.audio_service.seek_backward(),
-                                    _ => println!(""),
-                                }
-                            }
-                        }
-                    }
-                    _ => eprintln!("Key is not handled {:?}", key_event),
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
 
 impl App<'_> {
     fn render_main_page(&mut self, frame: &mut ratatui::Frame) {
